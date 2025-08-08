@@ -126,11 +126,11 @@ function calcularLeadTime(
     let total = 0;
     for (let i = 0; i < N; i++) {
       const mu = Math.max(1e-6, capacidadeMedia(p.fator[i] ?? 1));
-      const Q = i === 0
-        ? (p.politica.modo === "restricao"
-            ? (Number.isFinite(ctx.visAntes[0]) ? (ctx.visAntes[0] as number) : 0)
-            : 0)
-        : (Number.isFinite(ctx.visAntes[i]) ? (ctx.visAntes[i] as number) : 0);
+const Q = i === 0
+    ? (p.politica.modo === "restricao"
+        ? (Number.isFinite(ctx.visAntes[0]) ? (ctx.visAntes[0] as number) : 0)
+        : 0)
+    : (Number.isFinite(ctx.visAntes[i]) ? (ctx.visAntes[i] as number) : 0);
       const wait = Q / mu;
       const service = 1 / mu;
       const trans = i < N - 1 ? transfer : 0;
@@ -144,11 +144,11 @@ function calcularLeadTime(
       let tot = 0;
       for (let i = 0; i < N; i++) {
         const mu = Math.max(1e-6, capPerFace * (p.fator[i] ?? 1));
-        const Q = i === 0
-          ? (p.politica.modo === "restricao"
-              ? (Number.isFinite(ctx.visAntes[0]) ? (ctx.visAntes[0] as number) : 0)
-              : 0)
-          : (Number.isFinite(ctx.visAntes[i]) ? (ctx.visAntes[i] as number) : 0);
+		 const Q = i === 0
+		   ? (p.politica.modo === "restricao"
+			   ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0)
+			   : 0)
+		   : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
         const wait = Q / mu;
         const service = 1 / mu;
         const trans = i < N - 1 ? transfer : 0;
@@ -216,9 +216,11 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   const estoqueFinal = [...estoqueInicial];
 
   // M1 consome do estoque0 (∞ no push; liberar no DBR)
-  X[0] = Math.min(cap[0], Number.isFinite(estoque0) ? (estoque0 as number) : cap[0]);
+  X[0] = Math.min(cap[0], Number.isFinite(estoque0) ? Number(estoque0) : cap[0]);
   // No final da rodada, consideramos 0/saldo para visualização em M1
-  const finalM1 = p.politica.modo === "restricao" ? Math.max(0, (estoque0 as number) - X[0]) : Infinity;
+   const finalM1 = p.politica.modo === "restricao"
+   ? Math.max(0, (Number.isFinite(estoque0) ? Number(estoque0) : 0) - X[0])
+   : Infinity;
 
   for (let i = 1; i < 6; i++) {
     const disp = Number.isFinite(estoqueInicial[i]) ? estoqueInicial[i] : 0;
@@ -340,7 +342,7 @@ function App() {
     setParams(p);
     if (next.politica) {
       setEstado((prev) => {
-        const alvo = p.politica.modo === "restricao" ? diasParaPecas(p) : (Infinity as any);
+        const alvo = p.politica.modo === "restricao" ? diasParaPecas(p) : Infinity;
         const vis0 = alvo; // estoques visuais de M1 nesta rodada
         return { ...prev, visAntes: [vis0, ...((prev.visAntes?.slice(1) || []) || [0,0,0,0,0])] } as Estado;
       });
