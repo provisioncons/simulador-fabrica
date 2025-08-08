@@ -1,20 +1,45 @@
 <!doctype html>
 <html lang="pt-br">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Simulador de Fábrica — Publicado</title>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background:#f7fafc; }
-    .card { background:#fff; padding:32px; border:1px solid #e5e7eb; border-radius:16px; box-shadow:0 6px 18px rgba(0,0,0,.06); text-align:center; }
-    h1 { margin:0 0 8px; }
-    p { margin:8px 0 0; color:#4b5563; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>🚀 Publicação OK</h1>
-    <p>Se você está vendo esta página, o GitHub Pages está funcionando.</p>
-  </div>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Simulador de Fábrica — Jogo dos Dados</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#f7f7fb; }
+      .app { max-width: 1200px; margin: 24px auto; padding: 16px; }
+    </style>
+    <!-- (Opcional) Tailwind CDN apenas para a estética das classes já usadas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root" class="app"></div>
+
+    <!-- React e ReactDOM (produção) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel standalone para transpilação de JSX/TS no navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Carrega o seu JSX e transpila no navegador.
+         Troque o SRC abaixo se o nome do arquivo for diferente. -->
+    <script
+      type="text/babel"
+      data-presets="react,typescript"
+      src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx">
+    </script>
+
+    <!-- Bootstrap: caso o JSX não faça o render, faremos aqui como fallback -->
+    <script type="text/babel">
+      // Se a função App não se auto-renderizar no final do arquivo JSX,
+      // garantimos o render aqui (desde que window.App exista).
+      setTimeout(() => {
+        if (window.App && !window.__APP_MOUNTED__) {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(<window.App />);
+          window.__APP_MOUNTED__ = true;
+        }
+      }, 0);
+    </script>
+  </body>
 </html>
