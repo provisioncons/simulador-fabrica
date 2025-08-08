@@ -88,7 +88,7 @@ function diasParaPecas(p: Params): number {
 }
 
 function estadoInicial(p: Params): Estado {
-  const visIni = [Infinity, ...p.estoqueInicial] as number[];
+  const visIni = [Infinity, ...p.estoqueInicial];
   return {
     rodada: 0,
     dados: [0, 0, 0, 0, 0, 0],
@@ -201,7 +201,7 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
 
   // 3) Política: determinar liberação na M1 (não empurra para M2 nesta rodada)
   let liberar = 0;
-  let estoque0: number | typeof Infinity = Infinity;
+  let estoque0 = Infinity;
   if (p.politica.modo === "restricao") {
     const k = p.politica.gargalo - 1; // índice 0..5
     const alvo = diasParaPecas(p);
@@ -221,7 +221,7 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   const finalM1 = p.politica.modo === "restricao" ? Math.max(0, (estoque0 as number) - X[0]) : Infinity;
 
   for (let i = 1; i < 6; i++) {
-    const disp = Number.isFinite(estoqueInicial[i]) ? (estoqueInicial[i] as number) : 0;
+    const disp = Number.isFinite(estoqueInicial[i]) ? estoqueInicial[i] : 0;
     const prod = Math.min(cap[i], disp);
     X[i] = prod;
     estoqueFinal[i] = disp - prod; // NÃO somar X[i-1] nesta rodada (entra só na próxima)
@@ -229,10 +229,10 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   estoqueFinal[0] = finalM1; // para consistência
 
   // 5) Preparar ESTOQUE INICIAL da PRÓXIMA rodada (delay de 1 rodada)
-  const proxAntes: number[] = [...estoqueFinal];
+  const proxAntes = [...estoqueFinal];
   for (let i = 1; i < 6; i++) {
     const add = X[i - 1];
-    proxAntes[i] = (Number.isFinite(proxAntes[i]) ? (proxAntes[i] as number) : 0) + add;
+    proxAntes[i] = (Number.isFinite(proxAntes[i]) ? proxAntes[i] : 0) + add;
   }
   // M1 na próxima rodada: ∞ no push; no DBR, será recalculado na próxima rodada
   proxAntes[0] = p.politica.modo === "restricao" ? finalM1 : Infinity;
@@ -240,7 +240,7 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   // 6) Métricas
   const th = X[5];
   const thAcum = s.thAcum + th;
-  const wip = (estoqueFinal.slice(1) as number[]).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  const wip = (estoqueFinal.slice(1) || []).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
   const thMedio = thAcum / (s.rodada + 1);
   // --- Lead time estimate by selected method ---
   const lead = calcularLeadTime(p, { wip, thMedio, visAntes: estoqueInicial });
@@ -342,7 +342,7 @@ function App() {
       setEstado((prev) => {
         const alvo = p.politica.modo === "restricao" ? diasParaPecas(p) : (Infinity as any);
         const vis0 = alvo; // estoques visuais de M1 nesta rodada
-        return { ...prev, visAntes: [vis0, ...((prev.visAntes?.slice(1) as number[]) || [0,0,0,0,0])] } as Estado;
+        return { ...prev, visAntes: [vis0, ...((prev.visAntes?.slice(1) || []) || [0,0,0,0,0])] } as Estado;
       });
     }
   }
@@ -364,7 +364,7 @@ function App() {
     return () => clearInterval(id);
   }, [autoplay, params]);
 
-  const buffers = (estado.visAntes?.slice(1) as number[]) || [];
+  const buffers = (estado.visAntes?.slice(1) || []) || [];
   const producao = estado.producao;
   const dados = estado.dados;
 
@@ -377,7 +377,7 @@ function App() {
       estado.rodada,
       ...dados,
       ...producao,
-      ...(estado.visAntes?.slice(1) as number[]),
+      ...(estado.visAntes?.slice(1) || []),
       estado.th,
       estado.wip,
       estado.leadTime.toFixed(4),
@@ -525,14 +525,14 @@ function App() {
           <div className="mt-4 space-y-2">
             <Row label="Estoque Anterior">
               <Cell value={Number.isFinite(estado.visAntes?.[0] as number) ? (estado.visAntes?.[0] as number) : Infinity} infinity={params.politica.modo !== "restricao"} />
-              {(estado.visAntes?.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
+              {(estado.visAntes?.slice(1) || []).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
             <Row label="Produção">
               {estado.producao.map((x, i) => <Cell key={i} value={x} />)}
             </Row>
             <Row label="Estoque Final">
               <Cell value={0} muted />
-              {(estado.estoqueDepois.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
+              {(estado.estoqueDepois.slice(1) || []).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
           </div>
 
