@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+
 
 /**
  * Simulador de Fábrica por Dados — versão com "atraso de 1 rodada" entre máquinas
  * e política DBR que NÃO reseta o jogo quando ativada.
  */
+ 
+ // Usando React global (CDN):
+const { useEffect, useRef, useState } = React;
+
 
 // ===== Tipos =====
 interface Politica {
