@@ -1,17 +1,42 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Fábrica (Jogo dos Dados)</title>
-</head>
-<body>
-    <div id="root"></div>
-    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <script type="text/babel" src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx"></script>
-</body>
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Simulador de Fábrica — Jogo dos Dados</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#f7f7fb; }
+      .app { max-width: 1200px; margin: 24px auto; padding: 16px; }
+    </style>
+    <!-- (Opcional) Tailwind para estética das classes usadas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root" class="app"></div>
+
+    <!-- React 18 (UMD) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel no navegador (para transpilar JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Seu app em JSX puro. NOTA: usamos ?v=6 para quebrar cache -->
+    <script
+      type="text/babel"
+      data-presets="react"
+      src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx?v=6">
+    </script>
+
+    <!-- Fallback: se o arquivo JSX não fizer render sozinho, a gente monta aqui -->
+    <script type="text/babel" data-presets="react">
+      setTimeout(() => {
+        if (window.App && !window.__APP_MOUNTED__) {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(<window.App />);
+          window.__APP_MOUNTED__ = true;
+        }
+      }, 0);
+    </script>
+  </body>
 </html>
-
-
