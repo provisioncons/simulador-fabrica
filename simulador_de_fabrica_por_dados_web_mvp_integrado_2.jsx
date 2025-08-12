@@ -1,13 +1,13 @@
 /**
  * Simulador de Fábrica por Dados — atraso de 1 rodada entre máquinas
  * e política DBR sem reset do jogo.
- * (Preparado para rodar direto no GitHub Pages com React CDN + Babel.)
+ * (Pronto para rodar no GitHub Pages com React CDN + Babel.)
  */
 
 // React do CDN (sem imports)
 const { useEffect, useRef, useState } = React;
 
-// ===== Tipos (Babel com preset typescript ignora no runtime) =====
+/* Tipos (Babel com preset typescript ignora em runtime) */
 interface Politica {
   modo: "livre" | "restricao";
   gargalo: 1 | 2 | 3 | 4 | 5 | 6;
@@ -45,7 +45,7 @@ interface Estado {
   lucro: number;
 }
 
-// ===== Utilitários =====
+/* Utilitários */
 const MEAN_DIE = 3.5;
 function mulberry32(seed: number) {
   let t = seed >>> 0;
@@ -57,7 +57,7 @@ function mulberry32(seed: number) {
   };
 }
 
-// ===== Parâmetros padrão =====
+/* Parâmetros padrão */
 const defaultParams: Params = {
   fator: [2, 2, 2, 1, 2, 2],
   estoqueInicial: [0, 0, 0, 0, 0], // b2..b6
@@ -75,7 +75,9 @@ const defaultParams: Params = {
 function diasParaPecas(p: Params): number {
   const k = p.politica.gargalo - 1;
   const mediaCap = MEAN_DIE * (p.fator[k] ?? 1);
-  const alvo = p.politica.bufferAlvoPecas ?? Math.round((p.politica.bufferAlvoDias ?? 0) * mediaCap);
+  const alvo =
+    p.politica.bufferAlvoPecas ??
+    Math.round((p.politica.bufferAlvoDias ?? 0) * mediaCap);
   return Math.max(0, alvo);
 }
 
@@ -100,7 +102,7 @@ function estadoInicial(p: Params): Estado {
   };
 }
 
-// ===== Lead time (4 métodos simples) =====
+/* Lead time (4 métodos simples) */
 function capacidadeMedia(f: number) { return MEAN_DIE * f; }
 function calcularLeadTime(
   p: Params,
@@ -117,7 +119,9 @@ function calcularLeadTime(
     for (let i = 0; i < N; i++) {
       const mu = Math.max(1e-6, capacidadeMedia(p.fator[i] ?? 1));
       const Q = i === 0
-        ? (p.politica.modo === "restricao" ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0) : 0)
+        ? (p.politica.modo === "restricao"
+            ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0)
+            : 0)
         : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
       total += (Q / mu) + (1 / mu) + (i < N - 1 ? transfer : 0);
     }
@@ -130,7 +134,9 @@ function calcularLeadTime(
       for (let i = 0; i < N; i++) {
         const mu = Math.max(1e-6, capPerFace * (p.fator[i] ?? 1));
         const Q = i === 0
-          ? (p.politica.modo === "restricao" ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0) : 0)
+          ? (p.politica.modo === "restricao"
+              ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0)
+              : 0)
           : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
         tot += (Q / mu) + (1 / mu) + (i < N - 1 ? transfer : 0);
       }
@@ -167,25 +173,25 @@ function calcularLeadTime(
   return ctx.thMedio > 0 ? ctx.wip / ctx.thMedio : 0;
 }
 
-// ===== Motor com atraso de 1 rodada =====
+/* Motor com atraso de 1 rodada */
 function passo(p: Params, s: Estado, rng: () => number): Estado {
   // 1) Sorteio e capacidades
   const dados = Array.from({ length: 6 }, () => 1 + Math.floor(rng() * 6));
   const cap = dados.map((d, i) => Math.floor(d * p.fator[i]));
 
-  // 2) Estoque inicial da rodada (o que estava preparado para esta rodada)
+  // 2) Estoque inicial da rodada
   const estoqueInicial = [...s.estoqueAntes];
 
   // 3) Política: decidir liberação na M1
   let liberar = 0;
-  let estoque0: number | typeof Infinity = Infinity; // o que M1 pode consumir hoje
+  let estoque0 = Infinity; // o que M1 pode consumir hoje
   if (p.politica.modo === "restricao") {
     const k = p.politica.gargalo - 1;
     const alvo = diasParaPecas(p);
     const bufAtual = Number.isFinite(estoqueInicial[k]) ? Number(estoqueInicial[k]) : 0;
-    liberar = Math.max(0, alvo - bufAtual);         // quanto devo soltar na M1
-    cap[0]  = Math.min(cap[0], liberar);            // capacidade efetiva da M1
-    estoque0 = liberar;                             // disponibilidade para M1 nesta rodada
+    liberar = Math.max(0, alvo - bufAtual);
+    cap[0] = Math.min(cap[0], liberar);
+    estoque0 = liberar;
   }
 
   // 4) Produção com atraso de 1 rodada
@@ -202,7 +208,7 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
     const disp = Number.isFinite(estoqueInicial[i]) ? Number(estoqueInicial[i]) : 0;
     const prod = Math.min(cap[i], disp);
     X[i] = prod;
-    estoqueFinal[i] = disp - prod; // NÃO entra o X[i-1] nesta rodada (só na próxima)
+    estoqueFinal[i] = disp - prod; // NÃO entra X[i-1] nesta rodada (só na próxima)
   }
   estoqueFinal[0] = finalM1;
 
@@ -216,7 +222,10 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   // 6) Métricas
   const th = X[5];
   const thAcum = s.thAcum + th;
-  const wip = (estoqueFinal.slice(1) as number[]).reduce((a, b) => a + (Number.isFinite(b) ? Number(b) : 0), 0);
+  const wip = estoqueFinal.slice(1).reduce(
+    (a, b) => a + (Number.isFinite(b) ? Number(b) : 0),
+    0
+  );
   const thMedio = thAcum / (s.rodada + 1);
   const lead = calcularLeadTime(p, { wip, thMedio, visAntes: [estoque0, ...estoqueInicial.slice(1)] });
 
@@ -225,16 +234,14 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   const DO = s.do + p.custoFixo;
   const lucro = ganho - DO - inv - p.custoVariavel * thAcum;
 
-  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // AJUSTE DA UI: mostrar na M1 o que FOI LIBERADO nesta rodada (não o saldo antigo)
-  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // Para a UI: mostrar na M1 o que FOI LIBERADO nesta rodada (não o saldo antigo)
   const visM1 = p.politica.modo === "restricao" ? liberar : Infinity;
 
   return {
     rodada: s.rodada + 1,
     dados,
     capacidade: cap,
-    estoqueAntes: proxAntes,               // para a próxima rodada
+    estoqueAntes: proxAntes,               // próxima rodada
     producao: X,
     estoqueDepois: estoqueFinal,
     visAntes: [visM1, ...estoqueInicial.slice(1)], // UI da rodada atual
@@ -249,8 +256,8 @@ function passo(p: Params, s: Estado, rng: () => number): Estado {
   };
 }
 
-// ===== UI helpers =====
-function NumberInput({ label, value, onChange, step = 1, min = 0 }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number }) {
+/* UI helpers */
+function NumberInput({ label, value, onChange, step = 1, min = 0 }) {
   return (
     <label className="flex items-center justify-between gap-2 text-sm py-1">
       <span className="text-gray-700">{label}</span>
@@ -265,7 +272,7 @@ function NumberInput({ label, value, onChange, step = 1, min = 0 }: { label: str
     </label>
   );
 }
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }) {
   return (
     <div>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
@@ -273,7 +280,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     </div>
   );
 }
-function Cell({ value, infinity = false, muted = false }: { value: number; infinity?: boolean; muted?: boolean }) {
+function Cell({ value, infinity = false, muted = false }) {
   const display = infinity ? "∞" : (Number.isFinite(value) ? Math.max(0, Math.floor(value)).toString() : "∞");
   return (
     <div className={`rounded-xl border px-2 py-3 text-center ${muted ? "bg-gray-50 text-gray-400" : "bg-yellow-50"}`}>
@@ -281,7 +288,7 @@ function Cell({ value, infinity = false, muted = false }: { value: number; infin
     </div>
   );
 }
-function Metric({ label, value, precision = 0 }: { label: string; value: number; precision?: number }) {
+function Metric({ label, value, precision = 0 }) {
   return (
     <div className="rounded-xl bg-gray-50 p-3 text-center border">
       <div className="text-xs text-gray-500">{label}</div>
@@ -290,31 +297,31 @@ function Metric({ label, value, precision = 0 }: { label: string; value: number;
   );
 }
 
-// ===== App =====
+/* App */
 function App() {
-  const [params, setParams] = useState<Params>({ ...defaultParams });
-  const [estado, setEstado] = useState<Estado>(() => estadoInicial({ ...defaultParams }));
-  const [thMediaSerie, setThMediaSerie] = useState<number[]>([]);
+  const [params, setParams] = useState({ ...defaultParams });
+  const [estado, setEstado] = useState(() => estadoInicial({ ...defaultParams }));
+  const [thMediaSerie, setThMediaSerie] = useState([]);
   const [rodarN, setRodarN] = useState(1);
   const [autoplay, setAutoplay] = useState(false);
-  const rngRef = useRef<() => number>(() => Math.random());
+  const rngRef = useRef(() => Math.random());
 
   useEffect(() => { rngRef.current = mulberry32(params.semente); }, [params.semente]);
 
-  function aplicarParametros(next: Partial<Params>) {
-    const p = { ...params, ...next } as Params;
+  function aplicarParametros(next) {
+    const p = { ...params, ...next };
     setParams(p);
     setEstado(estadoInicial(p));
     setThMediaSerie([]);
     setAutoplay(false);
   }
-  function aplicarParametrosSoft(next: Partial<Params>) {
-    const p = { ...params, ...next } as Params;
+  function aplicarParametrosSoft(next) {
+    const p = { ...params, ...next };
     setParams(p);
     if (next.politica) {
       setEstado((prev) => {
         const alvo = p.politica.modo === "restricao" ? diasParaPecas(p) : Infinity;
-        return { ...prev, visAntes: [alvo, ...((prev.visAntes?.slice(1) as number[]) || [0,0,0,0,0])] } as Estado;
+        return { ...prev, visAntes: [alvo, ...((prev.visAntes?.slice(1) ?? [0,0,0,0,0]))] };
       });
     }
   }
@@ -327,7 +334,7 @@ function App() {
       return prox;
     });
   }
-  function rodarNLote(n: number) { for (let i = 0; i < n; i++) rodarPasso(); }
+  function rodarNLote(n) { for (let i = 0; i < n; i++) rodarPasso(); }
 
   useEffect(() => {
     if (!autoplay) return;
@@ -342,7 +349,7 @@ function App() {
     const headers = ["rodada","d1","d2","d3","d4","d5","d6","x1","x2","x3","x4","x5","x6","b2_ini","b3_ini","b4_ini","b5_ini","b6_ini","th","wip","lead","ganho","inv","do","lucro"];
     const linhas = [headers.join(",")];
     linhas.push([
-      estado.rodada, ...dados, ...producao, ...(estado.visAntes?.slice(1) as number[]),
+      estado.rodada, ...dados, ...producao, ...(estado.visAntes?.slice(1) ?? []),
       estado.th, estado.wip, estado.leadTime.toFixed(4),
       estado.ganho.toFixed(2), estado.inv.toFixed(2), estado.do.toFixed(2), estado.lucro.toFixed(2),
     ].join(","));
@@ -380,13 +387,13 @@ function App() {
             <div className="text-sm font-medium text-gray-600">Política</div>
             <div className="flex items-center gap-2">
               <select className="border rounded px-2 py-1" value={params.politica.modo}
-                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, modo: e.target.value as any } })}>
+                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, modo: e.target.value } })}>
                 <option value="livre">Livre (push)</option>
                 <option value="restricao">Subordinar à restrição (DBR)</option>
               </select>
               <label className="text-sm">Gargalo:</label>
               <select className="border rounded px-2 py-1" value={params.politica.gargalo}
-                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, gargalo: parseInt(e.target.value, 10) as 1|2|3|4|5|6 } })}>
+                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, gargalo: parseInt(e.target.value, 10) } })}>
                 {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{`M${n}`}</option>)}
               </select>
             </div>
@@ -400,7 +407,7 @@ function App() {
             <div className="text-sm font-medium text-gray-600">Lead time – método</div>
             <div className="flex items-center gap-2">
               <select className="border rounded px-2 py-1" value={params.ltMetodo ?? 1}
-                onChange={(e) => aplicarParametros({ ltMetodo: parseInt(e.target.value, 10) as 1|2|3|4 })}>
+                onChange={(e) => aplicarParametros({ ltMetodo: parseInt(e.target.value, 10) })}>
                 <option value={1}>1) Little (WIP/TH médio)</option>
                 <option value={2}>2) Estágios (Σ fila/μ + 1/μ + transf)</option>
                 <option value={3}>3) Janela min–max (média)</option>
@@ -450,7 +457,7 @@ function App() {
             </div>
           </div>
 
-          {/* Métricas de topo */}
+          {/* Métricas */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-4">
             <Metric label="Rodada" value={estado.rodada} />
             <Metric label={`Lead time (método ${params.ltMetodo ?? 1})`} value={estado.leadTime} precision={2} />
@@ -480,15 +487,15 @@ function App() {
           {/* Estoques e produção */}
           <div className="mt-4 space-y-2">
             <Row label="Estoque Anterior">
-              <Cell value={Number.isFinite(estado.visAntes?.[0] as number) ? (estado.visAntes?.[0] as number) : Infinity} infinity={params.politica.modo !== "restricao"} />
-              {(estado.visAntes?.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
+              <Cell value={Number.isFinite(estado.visAntes?.[0]) ? Number(estado.visAntes?.[0]) : Infinity} infinity={params.politica.modo !== "restricao"} />
+              {(estado.visAntes?.slice(1) ?? []).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
             <Row label="Produção">
               {estado.producao.map((x, i) => <Cell key={i} value={x} />)}
             </Row>
             <Row label="Estoque Final">
               <Cell value={0} muted />
-              {(estado.estoqueDepois.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
+              {(estado.estoqueDepois.slice(1) ?? []).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
           </div>
 
@@ -505,9 +512,9 @@ function App() {
   );
 }
 
-// Expor globalmente para o bootstrap do index.html
+/* Bootstrap pro index.html */
 window.App = App;
-// (Opcional) Render aqui em vez do fallback do index.html:
+// Se preferir renderizar aqui, descomente abaixo e remova o fallback do index.html
 // const root = ReactDOM.createRoot(document.getElementById('root'));
 // root.render(<App />);
 // window.__APP_MOUNTED__ = true;
