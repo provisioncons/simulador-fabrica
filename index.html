@@ -4,24 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fábrica (Jogo dos Dados)</title>
-  <!-- Opcional: evitar o 404 do favicon -->
   <link rel="icon" href="data:,">
 </head>
 <body>
   <div id="root"></div>
 
-  <!-- React 17 e ReactDOM (ok em produção ou development) -->
+  <!-- React e ReactDOM em produção -->
   <script src="https://unpkg.com/react@17/umd/react.production.min.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
 
-  <!-- Babel (apenas para esta página estática no Pages) -->
+  <!-- Babel só para esta página estática -->
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
 
-  <!-- Importante: usar es2015,react (não 'env') -->
+  <!-- Presets explícitos + cache-buster opcional -->
   <script
     type="text/babel"
     data-presets="es2015,react"
-    src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx">
+    src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx?v=3">
   </script>
 </body>
 </html>
