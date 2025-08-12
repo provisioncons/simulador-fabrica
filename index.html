@@ -8,28 +8,28 @@
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#f7f7fb; }
       .app { max-width: 1200px; margin: 24px auto; padding: 16px; }
     </style>
-    <!-- (Opcional) Tailwind para estética das classes usadas -->
+    <!-- Tailwind (apenas para as classes de estilo que já usamos) -->
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
     <div id="root" class="app"></div>
 
-    <!-- React 18 (UMD) -->
+    <!-- React e ReactDOM (produção) -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel no navegador (para transpilar JSX) -->
+    <!-- Babel standalone para transpilação de JSX/TS no navegador -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Seu app em JSX puro. NOTA: usamos ?v=6 para quebrar cache -->
+    <!-- Carrega o seu JSX e transpila no navegador -->
     <script
       type="text/babel"
-      data-presets="react"
-      src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx?v=6">
+      data-presets="react,typescript"
+      src="./simulador_de_fabrica_por_dados_web_mvp_integrado_2.jsx">
     </script>
 
-    <!-- Fallback: se o arquivo JSX não fizer render sozinho, a gente monta aqui -->
-    <script type="text/babel" data-presets="react">
+    <!-- Fallback: se o JSX não fizer o render sozinho, renderizamos aqui -->
+    <script type="text/babel">
       setTimeout(() => {
         if (window.App && !window.__APP_MOUNTED__) {
           const root = ReactDOM.createRoot(document.getElementById('root'));

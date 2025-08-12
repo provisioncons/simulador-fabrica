@@ -1,10 +1,53 @@
-// ***** Simulador de Fábrica — JS puro (sem TypeScript) *****
-// Usa React global (CDN):
+/**
+ * Simulador de Fábrica por Dados — atraso de 1 rodada entre máquinas
+ * e política DBR sem reset do jogo.
+ * (Preparado para rodar direto no GitHub Pages com React CDN + Babel.)
+ */
+
+// React do CDN (sem imports)
 const { useEffect, useRef, useState } = React;
 
-// ==== Utilitários ====
+// ===== Tipos (Babel com preset typescript ignora no runtime) =====
+interface Politica {
+  modo: "livre" | "restricao";
+  gargalo: 1 | 2 | 3 | 4 | 5 | 6;
+  bufferAlvoPecas?: number;
+  bufferAlvoDias?: number;
+}
+interface Params {
+  fator: number[];
+  estoqueInicial: number[]; // b2..b6
+  preco: number;
+  custoVariavel: number;
+  custoFixo: number;
+  custoInventario: number;
+  politica: Politica;
+  semente: number;
+  ltMetodo?: 1 | 2 | 3 | 4;
+  ltTransfer?: number;
+  ltMcRuns?: number;
+}
+interface Estado {
+  rodada: number;
+  dados: number[];
+  capacidade: number[];
+  estoqueAntes: (number | typeof Infinity)[];
+  producao: number[];
+  estoqueDepois: (number | typeof Infinity)[];
+  visAntes: (number | typeof Infinity)[];
+  th: number;
+  thAcum: number;
+  wip: number;
+  leadTime: number;
+  ganho: number;
+  inv: number;
+  do: number;
+  lucro: number;
+}
+
+// ===== Utilitários =====
 const MEAN_DIE = 3.5;
-function mulberry32(seed) {
+function mulberry32(seed: number) {
   let t = seed >>> 0;
   return function () {
     t += 0x6D2B79F5;
@@ -14,113 +57,100 @@ function mulberry32(seed) {
   };
 }
 
-// ==== Parâmetros padrão ====
-const defaultParams = {
-  fator: [2, 2, 2, 1, 2, 2],     // multiplicador por máquina (M1..M6)
-  estoqueInicial: [0, 0, 0, 0, 0], // buffers antes de M2..M6
+// ===== Parâmetros padrão =====
+const defaultParams: Params = {
+  fator: [2, 2, 2, 1, 2, 2],
+  estoqueInicial: [0, 0, 0, 0, 0], // b2..b6
   preco: 4,
   custoVariavel: 0,
   custoFixo: 0,
   custoInventario: 0,
-  politica: { modo: "livre", gargalo: 4, bufferAlvoDias: 3 }, // "livre" ou "restricao"
+  politica: { modo: "livre", gargalo: 4, bufferAlvoDias: 3 },
   semente: 12345,
-  ltMetodo: 1,        // 1=Little; 2=Estágios; 3=Janela min–max; 4=Monte Carlo
-  ltTransfer: 1,      // atraso de transferência entre estágios (rodadas)
-  ltMcRuns: 200,      // simulações MC
+  ltMetodo: 1,
+  ltTransfer: 1,
+  ltMcRuns: 200,
 };
 
-function diasParaPecas(p) {
+function diasParaPecas(p: Params): number {
   const k = p.politica.gargalo - 1;
   const mediaCap = MEAN_DIE * (p.fator[k] ?? 1);
-  const alvo = (p.politica.bufferAlvoPecas != null)
-    ? p.politica.bufferAlvoPecas
-    : Math.round((p.politica.bufferAlvoDias ?? 0) * mediaCap);
+  const alvo = p.politica.bufferAlvoPecas ?? Math.round((p.politica.bufferAlvoDias ?? 0) * mediaCap);
   return Math.max(0, alvo);
 }
 
-function estadoInicial(p) {
+function estadoInicial(p: Params): Estado {
   const visIni = [Infinity, ...p.estoqueInicial];
   return {
     rodada: 0,
-    dados: [0,0,0,0,0,0],
-    capacidade: [0,0,0,0,0,0],
-    estoqueAntes: visIni.slice(), // o que será usado na PRÓXIMA rodada
-    producao: [0,0,0,0,0,0],
-    estoqueDepois: visIni.slice(), // final da rodada anterior (igual ao inicial)
-    visAntes: visIni.slice(),      // estoque INICIAL da rodada executada (UI)
-    th: 0, thAcum: 0,
-    wip: p.estoqueInicial.reduce((a,b)=>a+b,0),
+    dados: [0, 0, 0, 0, 0, 0],
+    capacidade: [0, 0, 0, 0, 0, 0],
+    estoqueAntes: visIni.slice(),
+    producao: [0, 0, 0, 0, 0, 0],
+    estoqueDepois: visIni.slice(),
+    visAntes: visIni.slice(),
+    th: 0,
+    thAcum: 0,
+    wip: p.estoqueInicial.reduce((a, b) => a + b, 0),
     leadTime: 0,
-    ganho: 0, inv: 0, do: 0, lucro: 0,
+    ganho: 0,
+    inv: 0,
+    do: 0,
+    lucro: 0,
   };
 }
 
-// ==== Lead time ====
-function capacidadeMedia(fator) { return MEAN_DIE * fator; }
-
-function calcularLeadTime(p, ctx) {
+// ===== Lead time (4 métodos simples) =====
+function capacidadeMedia(f: number) { return MEAN_DIE * f; }
+function calcularLeadTime(
+  p: Params,
+  ctx: { wip: number; thMedio: number; visAntes: (number | typeof Infinity)[] }
+): number {
   const metodo = p.ltMetodo ?? 1;
   const transfer = p.ltTransfer ?? 1;
   const N = 6;
 
-  if (metodo === 1) {
-    // Lei de Little (macro)
-    return ctx.thMedio > 0 ? ctx.wip / ctx.thMedio : 0;
-  }
+  if (metodo === 1) return ctx.thMedio > 0 ? ctx.wip / ctx.thMedio : 0;
 
   if (metodo === 2) {
-    // Analítico por estágio (espera + serviço + transferência)
     let total = 0;
     for (let i = 0; i < N; i++) {
       const mu = Math.max(1e-6, capacidadeMedia(p.fator[i] ?? 1));
-      const Q = (i === 0)
-        ? (p.politica.modo === "restricao"
-            ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0)
-            : 0)
+      const Q = i === 0
+        ? (p.politica.modo === "restricao" ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0) : 0)
         : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
-      const wait = Q / mu;
-      const service = 1 / mu;
-      const trans = i < N - 1 ? transfer : 0;
-      total += wait + service + trans;
+      total += (Q / mu) + (1 / mu) + (i < N - 1 ? transfer : 0);
     }
     return total;
   }
 
   if (metodo === 3) {
-    // Janela [min, max] usando capacidades mín/max por estágio (média da janela)
-    const sumFor = (capPerFace) => {
+    const sumFor = (capPerFace: number) => {
       let tot = 0;
       for (let i = 0; i < N; i++) {
         const mu = Math.max(1e-6, capPerFace * (p.fator[i] ?? 1));
-        const Q = (i === 0)
-          ? (p.politica.modo === "restricao"
-              ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0)
-              : 0)
+        const Q = i === 0
+          ? (p.politica.modo === "restricao" ? (Number.isFinite(ctx.visAntes[0]) ? Number(ctx.visAntes[0]) : 0) : 0)
           : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
-        const wait = Q / mu;
-        const service = 1 / mu;
-        const trans = i < N - 1 ? transfer : 0;
-        tot += wait + service + trans;
+        tot += (Q / mu) + (1 / mu) + (i < N - 1 ? transfer : 0);
       }
       return tot;
     };
-    const ltMin = sumFor(6);
-    const ltMax = sumFor(1);
+    const ltMin = sumFor(6), ltMax = sumFor(1);
     return (ltMin + ltMax) / 2;
   }
 
   if (metodo === 4) {
-    // Monte Carlo simples
     const runs = Math.max(10, p.ltMcRuns ?? 200);
-    const localRng = mulberry32((p.semente ?? 1) + 987654321);
-    const sampleOne = () => {
+    const rng = mulberry32((p.semente ?? 1) + 987654321);
+    const sample = () => {
       let t = 0;
       for (let i = 0; i < N; i++) {
         const fator = p.fator[i] ?? 1;
-        const Q = (i === 0) ? 0 : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
-        let restante = Q + 1; // inclui nosso pedido
+        const Q = i === 0 ? 0 : (Number.isFinite(ctx.visAntes[i]) ? Number(ctx.visAntes[i]) : 0);
+        let restante = Q + 1;
         while (restante > 0) {
-          const cap = (1 + Math.floor(localRng() * 6)) * fator;
+          const cap = (1 + Math.floor(rng() * 6)) * fator;
           const proc = Math.min(restante, cap);
           restante -= proc;
           t += 1;
@@ -130,41 +160,41 @@ function calcularLeadTime(p, ctx) {
       return t;
     };
     let acc = 0;
-    for (let r = 0; r < runs; r++) acc += sampleOne();
+    for (let r = 0; r < runs; r++) acc += sample();
     return acc / runs;
   }
 
   return ctx.thMedio > 0 ? ctx.wip / ctx.thMedio : 0;
 }
 
-// ==== Motor com atraso de 1 rodada ====
-function passo(p, s, rng) {
-  // 1) Sorteio & capacidade
+// ===== Motor com atraso de 1 rodada =====
+function passo(p: Params, s: Estado, rng: () => number): Estado {
+  // 1) Sorteio e capacidades
   const dados = Array.from({ length: 6 }, () => 1 + Math.floor(rng() * 6));
   const cap = dados.map((d, i) => Math.floor(d * p.fator[i]));
 
-  // 2) Estoque inicial da rodada (para exibição e consumo)
+  // 2) Estoque inicial da rodada (o que estava preparado para esta rodada)
   const estoqueInicial = [...s.estoqueAntes];
 
-  // 3) Política (DBR) controla liberação em M1
+  // 3) Política: decidir liberação na M1
   let liberar = 0;
-  let estoque0 = Infinity;
+  let estoque0: number | typeof Infinity = Infinity; // o que M1 pode consumir hoje
   if (p.politica.modo === "restricao") {
     const k = p.politica.gargalo - 1;
     const alvo = diasParaPecas(p);
     const bufAtual = Number.isFinite(estoqueInicial[k]) ? Number(estoqueInicial[k]) : 0;
-    liberar = Math.max(0, alvo - bufAtual);
-    cap[0] = Math.min(cap[0], liberar);
-    estoque0 = liberar;
+    liberar = Math.max(0, alvo - bufAtual);         // quanto devo soltar na M1
+    cap[0]  = Math.min(cap[0], liberar);            // capacidade efetiva da M1
+    estoque0 = liberar;                             // disponibilidade para M1 nesta rodada
   }
 
-  // 4) Produção (com delay de 1 rodada entre estágios)
+  // 4) Produção com atraso de 1 rodada
   const X = Array(6).fill(0);
   const estoqueFinal = [...estoqueInicial];
 
-  // M1 consome do estoque0 (∞ no push; "liberar" no DBR)
+  // M1 consome do que foi liberado nesta rodada (ou ∞ no modo livre)
   X[0] = Math.min(cap[0], Number.isFinite(estoque0) ? Number(estoque0) : cap[0]);
-  const finalM1 = (p.politica.modo === "restricao")
+  const finalM1 = p.politica.modo === "restricao"
     ? Math.max(0, (Number.isFinite(estoque0) ? Number(estoque0) : 0) - X[0])
     : Infinity;
 
@@ -172,43 +202,55 @@ function passo(p, s, rng) {
     const disp = Number.isFinite(estoqueInicial[i]) ? Number(estoqueInicial[i]) : 0;
     const prod = Math.min(cap[i], disp);
     X[i] = prod;
-    estoqueFinal[i] = disp - prod;    // NÃO adiciona X[i-1] nesta rodada
+    estoqueFinal[i] = disp - prod; // NÃO entra o X[i-1] nesta rodada (só na próxima)
   }
   estoqueFinal[0] = finalM1;
 
-  // 5) Estoque INICIAL da próxima rodada = estoques finais + produção da etapa anterior
+  // 5) Estoque inicial da PRÓXIMA rodada (delay de 1)
   const proxAntes = [...estoqueFinal];
   for (let i = 1; i < 6; i++) {
-    const add = X[i - 1];
-    proxAntes[i] = (Number.isFinite(proxAntes[i]) ? Number(proxAntes[i]) : 0) + add;
+    proxAntes[i] = (Number.isFinite(proxAntes[i]) ? Number(proxAntes[i]) : 0) + X[i - 1];
   }
-  proxAntes[0] = (p.politica.modo === "restricao") ? finalM1 : Infinity;
+  proxAntes[0] = p.politica.modo === "restricao" ? finalM1 : Infinity;
 
   // 6) Métricas
   const th = X[5];
   const thAcum = s.thAcum + th;
-  const wip = (estoqueFinal.slice(1)).reduce((a, b) => a + (Number.isFinite(b) ? Number(b) : 0), 0);
+  const wip = (estoqueFinal.slice(1) as number[]).reduce((a, b) => a + (Number.isFinite(b) ? Number(b) : 0), 0);
   const thMedio = thAcum / (s.rodada + 1);
-  const lead = calcularLeadTime(p, { wip, thMedio, visAntes: estoqueInicial });
+  const lead = calcularLeadTime(p, { wip, thMedio, visAntes: [estoque0, ...estoqueInicial.slice(1)] });
 
   const ganho = s.ganho + p.preco * th;
   const inv = s.inv + p.custoInventario * wip;
   const DO = s.do + p.custoFixo;
   const lucro = ganho - DO - inv - p.custoVariavel * thAcum;
 
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // AJUSTE DA UI: mostrar na M1 o que FOI LIBERADO nesta rodada (não o saldo antigo)
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  const visM1 = p.politica.modo === "restricao" ? liberar : Infinity;
+
   return {
     rodada: s.rodada + 1,
-    dados, capacidade: cap,
-    estoqueAntes: proxAntes,
+    dados,
+    capacidade: cap,
+    estoqueAntes: proxAntes,               // para a próxima rodada
     producao: X,
     estoqueDepois: estoqueFinal,
-    visAntes: estoqueInicial,
-    th, thAcum, wip, leadTime: lead, ganho, inv, do: DO, lucro,
+    visAntes: [visM1, ...estoqueInicial.slice(1)], // UI da rodada atual
+    th,
+    thAcum,
+    wip,
+    leadTime: lead,
+    ganho,
+    inv,
+    do: DO,
+    lucro,
   };
 }
 
-// ==== Componentes de UI simples ====
-function NumberInput({ label, value, onChange, step = 1, min = 0 }) {
+// ===== UI helpers =====
+function NumberInput({ label, value, onChange, step = 1, min = 0 }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number }) {
   return (
     <label className="flex items-center justify-between gap-2 text-sm py-1">
       <span className="text-gray-700">{label}</span>
@@ -223,8 +265,7 @@ function NumberInput({ label, value, onChange, step = 1, min = 0 }) {
     </label>
   );
 }
-
-function Row({ label, children }) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
@@ -232,8 +273,7 @@ function Row({ label, children }) {
     </div>
   );
 }
-
-function Cell({ value, infinity = false, muted = false }) {
+function Cell({ value, infinity = false, muted = false }: { value: number; infinity?: boolean; muted?: boolean }) {
   const display = infinity ? "∞" : (Number.isFinite(value) ? Math.max(0, Math.floor(value)).toString() : "∞");
   return (
     <div className={`rounded-xl border px-2 py-3 text-center ${muted ? "bg-gray-50 text-gray-400" : "bg-yellow-50"}`}>
@@ -241,8 +281,7 @@ function Cell({ value, infinity = false, muted = false }) {
     </div>
   );
 }
-
-function Metric({ label, value, precision = 0 }) {
+function Metric({ label, value, precision = 0 }: { label: string; value: number; precision?: number }) {
   return (
     <div className="rounded-xl bg-gray-50 p-3 text-center border">
       <div className="text-xs text-gray-500">{label}</div>
@@ -251,43 +290,44 @@ function Metric({ label, value, precision = 0 }) {
   );
 }
 
-// ==== App ====
+// ===== App =====
 function App() {
-  const [params, setParams] = useState({ ...defaultParams });
-  const [estado, setEstado] = useState(() => estadoInicial({ ...defaultParams }));
+  const [params, setParams] = useState<Params>({ ...defaultParams });
+  const [estado, setEstado] = useState<Estado>(() => estadoInicial({ ...defaultParams }));
+  const [thMediaSerie, setThMediaSerie] = useState<number[]>([]);
   const [rodarN, setRodarN] = useState(1);
   const [autoplay, setAutoplay] = useState(false);
-  const rngRef = useRef(() => Math.random());
+  const rngRef = useRef<() => number>(() => Math.random());
 
-  useEffect(() => {
-    rngRef.current = mulberry32(params.semente);
-  }, [params.semente]);
+  useEffect(() => { rngRef.current = mulberry32(params.semente); }, [params.semente]);
 
-  function aplicarParametros(next) {
-    const p = { ...params, ...next };
+  function aplicarParametros(next: Partial<Params>) {
+    const p = { ...params, ...next } as Params;
     setParams(p);
     setEstado(estadoInicial(p));
+    setThMediaSerie([]);
     setAutoplay(false);
   }
-
-  // Atualiza política SEM reset (DBR em tempo real)
-  function aplicarParametrosSoft(next) {
-    const p = { ...params, ...next };
+  function aplicarParametrosSoft(next: Partial<Params>) {
+    const p = { ...params, ...next } as Params;
     setParams(p);
     if (next.politica) {
-      setEstado(prev => {
+      setEstado((prev) => {
         const alvo = p.politica.modo === "restricao" ? diasParaPecas(p) : Infinity;
-        const vis0 = alvo;
-        const resto = Array.isArray(prev.visAntes) ? prev.visAntes.slice(1) : [0,0,0,0,0];
-        return { ...prev, visAntes: [vis0, ...resto] };
+        return { ...prev, visAntes: [alvo, ...((prev.visAntes?.slice(1) as number[]) || [0,0,0,0,0])] } as Estado;
       });
     }
   }
 
   function rodarPasso() {
-    setEstado(s => passo(params, s, rngRef.current));
+    setEstado((s) => {
+      const prox = passo(params, s, rngRef.current);
+      const media = prox.thAcum / prox.rodada;
+      setThMediaSerie((arr) => [...arr, media]);
+      return prox;
+    });
   }
-  function rodarNLote(n) { for (let i = 0; i < n; i++) rodarPasso(); }
+  function rodarNLote(n: number) { for (let i = 0; i < n; i++) rodarPasso(); }
 
   useEffect(() => {
     if (!autoplay) return;
@@ -295,27 +335,21 @@ function App() {
     return () => clearInterval(id);
   }, [autoplay, params]);
 
+  const producao = estado.producao;
+  const dados = estado.dados;
+
   function exportarCSV() {
     const headers = ["rodada","d1","d2","d3","d4","d5","d6","x1","x2","x3","x4","x5","x6","b2_ini","b3_ini","b4_ini","b5_ini","b6_ini","th","wip","lead","ganho","inv","do","lucro"];
-    const linha = [
-      estado.rodada,
-      ...estado.dados,
-      ...estado.producao,
-      ...(estado.visAntes.slice(1)),
-      estado.th,
-      estado.wip,
-      estado.leadTime.toFixed(4),
-      estado.ganho.toFixed(2),
-      estado.inv.toFixed(2),
-      estado.do.toFixed(2),
-      estado.lucro.toFixed(2),
-    ].join(",");
-    const blob = new Blob([[headers.join(",") , linha].join("\n")], { type: "text/csv;charset=utf-8;" });
+    const linhas = [headers.join(",")];
+    linhas.push([
+      estado.rodada, ...dados, ...producao, ...(estado.visAntes?.slice(1) as number[]),
+      estado.th, estado.wip, estado.leadTime.toFixed(4),
+      estado.ganho.toFixed(2), estado.inv.toFixed(2), estado.do.toFixed(2), estado.lucro.toFixed(2),
+    ].join(","));
+    const blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `simulador-estado-r${estado.rodada}.csv`;
-    a.click();
+    a.href = url; a.download = `simulador-estado-r${estado.rodada}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -329,16 +363,16 @@ function App() {
           <div className="space-y-1">
             <div className="text-sm font-medium text-gray-600">Fator por máquina</div>
             {params.fator.map((v, i) => (
-              <NumberInput key={i} label={`Máquina ${i+1}`} value={v} step={0.1} min={0}
-                onChange={(x) => aplicarParametros({ fator: params.fator.map((fv, idx) => idx === i ? x : fv) })} />
+              <NumberInput key={i} label={`Máquina ${i + 1}`} value={v} step={0.1} min={0}
+                onChange={(x) => aplicarParametros({ fator: params.fator.map((fv, idx) => (idx === i ? x : fv)) })} />
             ))}
           </div>
 
           <div className="space-y-1">
             <div className="text-sm font-medium text-gray-600">Estoque inicial (antes de M2..M6)</div>
             {params.estoqueInicial.map((v, i) => (
-              <NumberInput key={i} label={`Buffer ${i+2}`} value={v} step={1} min={0}
-                onChange={(x) => aplicarParametros({ estoqueInicial: params.estoqueInicial.map((ev, idx) => idx === i ? Math.max(0, Math.floor(x)) : ev) })} />
+              <NumberInput key={i} label={`Buffer ${i + 2}`} value={v} step={1} min={0}
+                onChange={(x) => aplicarParametros({ estoqueInicial: params.estoqueInicial.map((ev, idx) => (idx === i ? Math.max(0, Math.floor(x)) : ev)) })} />
             ))}
           </div>
 
@@ -346,13 +380,13 @@ function App() {
             <div className="text-sm font-medium text-gray-600">Política</div>
             <div className="flex items-center gap-2">
               <select className="border rounded px-2 py-1" value={params.politica.modo}
-                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, modo: e.target.value } })}>
+                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, modo: e.target.value as any } })}>
                 <option value="livre">Livre (push)</option>
                 <option value="restricao">Subordinar à restrição (DBR)</option>
               </select>
               <label className="text-sm">Gargalo:</label>
               <select className="border rounded px-2 py-1" value={params.politica.gargalo}
-                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, gargalo: parseInt(e.target.value,10) } })}>
+                onChange={(e) => aplicarParametrosSoft({ politica: { ...params.politica, gargalo: parseInt(e.target.value, 10) as 1|2|3|4|5|6 } })}>
                 {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{`M${n}`}</option>)}
               </select>
             </div>
@@ -366,7 +400,7 @@ function App() {
             <div className="text-sm font-medium text-gray-600">Lead time – método</div>
             <div className="flex items-center gap-2">
               <select className="border rounded px-2 py-1" value={params.ltMetodo ?? 1}
-                onChange={(e) => aplicarParametros({ ltMetodo: parseInt(e.target.value,10) })}>
+                onChange={(e) => aplicarParametros({ ltMetodo: parseInt(e.target.value, 10) as 1|2|3|4 })}>
                 <option value={1}>1) Little (WIP/TH médio)</option>
                 <option value={2}>2) Estágios (Σ fila/μ + 1/μ + transf)</option>
                 <option value={3}>3) Janela min–max (média)</option>
@@ -405,18 +439,18 @@ function App() {
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold">Fábrica (Jogo dos Dados)</h1>
             <div className="flex items-center gap-2">
-              <button onClick={() => setAutoplay(a => !a)} className={`px-3 py-1 rounded text-sm ${autoplay ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>{autoplay ? "Pausar" : "Autoplay"}</button>
-              <button onClick={rodarPasso} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Rodar 1</button>
+              <button onClick={() => setAutoplay((a) => !a)} className={`px-3 py-1 rounded text-sm ${autoplay ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>{autoplay ? "Pausar" : "Autoplay"}</button>
+              <button onClick={() => rodarPasso()} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Rodar 1</button>
               <div className="flex items-center gap-2">
-                <input type="number" value={rodarN} onChange={e => setRodarN(Math.max(1, parseInt(e.target.value || "1", 10)))} className="w-20 border rounded px-2 py-1 text-right text-sm" />
+                <input type="number" value={rodarN} onChange={(e) => setRodarN(Math.max(1, parseInt(e.target.value || "1", 10)))} className="w-20 border rounded px-2 py-1 text-right text-sm" />
                 <button onClick={() => rodarNLote(rodarN)} className="px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-sm">Rodar N</button>
               </div>
-              <button onClick={() => { setEstado(estadoInicial(params)); setAutoplay(false); }} className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm">Recomeçar</button>
+              <button onClick={() => { setEstado(estadoInicial(params)); setThMediaSerie([]); setAutoplay(false); }} className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm">Recomeçar</button>
               <button onClick={exportarCSV} className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm">Exportar CSV</button>
             </div>
           </div>
 
-          {/* Métricas */}
+          {/* Métricas de topo */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-4">
             <Metric label="Rodada" value={estado.rodada} />
             <Metric label={`Lead time (método ${params.ltMetodo ?? 1})`} value={estado.leadTime} precision={2} />
@@ -426,7 +460,7 @@ function App() {
             <Metric label="Lucro (R$)" value={estado.lucro} precision={2} />
           </div>
 
-          {/* Dados/sorteios */}
+          {/* Dados das máquinas */}
           <div className="mt-4">
             <div className="grid grid-cols-6 gap-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -446,15 +480,15 @@ function App() {
           {/* Estoques e produção */}
           <div className="mt-4 space-y-2">
             <Row label="Estoque Anterior">
-              <Cell value={Number.isFinite(estado.visAntes[0]) ? Number(estado.visAntes[0]) : Infinity} infinity={params.politica.modo !== "restricao"} />
-              {estado.visAntes.slice(1).map((b, i) => <Cell key={i} value={b} />)}
+              <Cell value={Number.isFinite(estado.visAntes?.[0] as number) ? (estado.visAntes?.[0] as number) : Infinity} infinity={params.politica.modo !== "restricao"} />
+              {(estado.visAntes?.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
             <Row label="Produção">
               {estado.producao.map((x, i) => <Cell key={i} value={x} />)}
             </Row>
             <Row label="Estoque Final">
               <Cell value={0} muted />
-              {estado.estoqueDepois.slice(1).map((b, i) => <Cell key={i} value={b} />)}
+              {(estado.estoqueDepois.slice(1) as number[]).map((b, i) => <Cell key={i} value={b} />)}
             </Row>
           </div>
 
@@ -471,9 +505,9 @@ function App() {
   );
 }
 
-// Expõe para o fallback do index.html (e debug no console)
+// Expor globalmente para o bootstrap do index.html
 window.App = App;
-// Se preferir renderizar direto aqui, descomente:
+// (Opcional) Render aqui em vez do fallback do index.html:
 // const root = ReactDOM.createRoot(document.getElementById('root'));
 // root.render(<App />);
 // window.__APP_MOUNTED__ = true;
